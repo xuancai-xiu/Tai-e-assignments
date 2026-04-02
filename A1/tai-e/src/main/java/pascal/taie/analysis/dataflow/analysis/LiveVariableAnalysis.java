@@ -30,6 +30,11 @@ import pascal.taie.ir.exp.RValue;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Stmt;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
 /**
  * Implementation of classic live variable analysis.
  */
@@ -65,29 +70,76 @@ public class LiveVariableAnalysis extends
 
     @Override
     public boolean transferNode(Stmt stmt, SetFact<Var> in, SetFact<Var> out) {
-        Var def = null;
-        if (stmt.getDef().isPresent()) {
-            LValue lvalue = stmt.getDef().get();
-            if (lvalue instanceof Var) {
-                def = (Var) lvalue;
-            }
-        }
-
-
-        SetFact<Var> use = new SetFact<>();
-        for (RValue rvalue : stmt.getUses()) {
-            if (rvalue instanceof Var) {
-                use.add((Var) rvalue);
-            }
-        }
-
         SetFact<Var> oldIn = in.copy();
 
+        SetFact<Var> outMinusDef = out.copy();
+        Set<Var> defs = getDefs(stmt);
+        for (Var def : defs) {
+            outMinusDef.remove(def);
+        }
+
         in.clear();
-        in.union(use);
-        in.union(out);
-        in.remove(def);
+        in.union(outMinusDef);
+        for (Var use : getUses(stmt)) {
+            in.add(use);
+        }
 
         return !in.equals(oldIn);
+    }
+
+    /**
+     * 获取语句中使用的所有变量
+     */
+    private Set<Var> getUses(Stmt stmt) {
+        Set<Var> uses = new HashSet<>();
+
+        // 获取语句中所有的右值表达式（被使用的值）
+        List<RValue> rvalues = stmt.getUses();
+        for (RValue rvalue : rvalues) {
+            collectVars(rvalue, uses);
+        }
+
+        return uses;
+    }
+
+    /**
+     * 获取语句中定义的所有变量
+     */
+    private Set<Var> getDefs(Stmt stmt) {
+        Set<Var> defs = new HashSet<>();
+
+        // 获取语句中的左值表达式（被定义的值）
+        Optional<LValue> def = stmt.getDef();
+        if (def.isPresent()) {
+            collectLValueVars(def.get(), defs);
+        }
+
+        return defs;
+    }
+
+    /**
+     * 收集表达式中的所有变量
+     * 使用表达式提供的getUses()方法来递归收集
+     */
+    private void collectVars(RValue expr, Set<Var> vars) {
+        if (expr instanceof Var) {
+            // 直接是变量
+            vars.add((Var) expr);
+        } else {
+            // 递归收集子表达式中的变量
+            for (RValue use : expr.getUses()) {
+                collectVars(use, vars);
+            }
+        }
+    }
+
+    /**
+     * 收集左值表达式中的变量
+     */
+    private void collectLValueVars(LValue lvalue, Set<Var> vars) {
+        if (lvalue instanceof Var) {
+            // 左值是变量（普通赋值如 x = ...）
+            vars.add((Var) lvalue);
+        }
     }
 }
