@@ -25,6 +25,10 @@ package pascal.taie.analysis.dataflow.solver;
 import pascal.taie.analysis.dataflow.analysis.DataflowAnalysis;
 import pascal.taie.analysis.dataflow.fact.DataflowResult;
 import pascal.taie.analysis.graph.cfg.CFG;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashSet;
+import java.util.Set;
 
 class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
 
@@ -34,7 +38,40 @@ class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
 
     @Override
     protected void doSolveForward(CFG<Node> cfg, DataflowResult<Node, Fact> result) {
-        // TODO - finish me
+        Deque<Node> worklist = new ArrayDeque<>();
+        Set<Node> inWorklist = new HashSet<>();
+
+        for (Node node : cfg) {
+            worklist.add(node);
+            inWorklist.add(node);
+        }
+
+        while (!worklist.isEmpty()) {
+            Node node = worklist.poll();
+            inWorklist.remove(node);
+
+            Fact inFact = result.getInFact(node);
+            if (!node.equals(cfg.getEntry())) {
+                Fact newIn = analysis.newInitialFact();
+                for (Node pred : cfg.getPredsOf(node)) {
+                    analysis.meetInto(result.getOutFact(pred), newIn);
+                }
+                result.setInFact(node, newIn);
+                inFact = newIn;
+            }
+
+            Fact outFact = result.getOutFact(node);
+            boolean changed = analysis.transferNode(node, inFact, outFact);
+
+            if (changed) {
+                for (Node succ : cfg.getSuccsOf(node)) {
+                    if (!inWorklist.contains(succ)) {
+                        worklist.add(succ);
+                        inWorklist.add(succ);
+                    }
+                }
+            }
+        }
     }
 
     @Override
